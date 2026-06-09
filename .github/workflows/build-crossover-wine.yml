@@ -1,6 +1,9 @@
 name: Build CrossOver macOS Wine
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       source_repo:
@@ -43,6 +46,7 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "13.0"
       CC: clang
       CXX: clang++
+      SOURCE_REPO_DEFAULT: "https://media.codeweavers.com/pub/crossover/source/crossover-sources-26.2.0.tar.gz?_gl=1*xft0m8*_gcl_au*NDQ4NTEzMDUuMTc4MDk4MzM5Nw..*_ga*MTU2Mjg5NDk0OS4xNzgwOTgzMzk4*_ga_FFHF2Y4YVB*czE3ODEwMjc4NjEkbzUkZzAkdDE3ODEwMjc4NjEkajYwJGwwJGgzOTg5Mjc0NzY."
     steps:
       - name: Install build tools
         shell: bash
@@ -67,7 +71,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          source_url="${{ inputs.source_repo }}"
+          source_url="${{ inputs.source_repo || env.SOURCE_REPO_DEFAULT }}"
           source_path="${source_url%%\?*}"
 
           source_root="$RUNNER_TEMP/crossover-src"

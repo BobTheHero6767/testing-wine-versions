@@ -1,0 +1,193 @@
+name: Build CrossOver macOS Wine
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: "Git URL or archive URL for the CrossOver macOS source tree"
+        required: false
+        default: "https://media.codeweavers.com/pub/crossover/source/crossover-sources-26.2.0.tar.gz?_gl=1*xft0m8*_gcl_au*NDQ4NTEzMDUuMTc4MDk4MzM5Nw..*_ga*MTU2Mjg5NDk0OS4xNzgwOTgzMzk4*_ga_FFHF2Y4YVB*czE3ODEwMjc4NjEkbzUkZzAkdDE3ODEwMjc4NjEkajYwJGwwJGgzOTg5Mjc0NzY."
+        type: string
+      source_ref:
+        description: "Git ref, branch, or tag to build"
+        required: false
+        default: "main"
+        type: string
+      source_subdir:
+        description: "Relative path to the macOS Wine source directory inside the checkout"
+        required: false
+        default: "."
+        type: string
+      configure_args:
+        description: "Extra arguments passed to configure for macOS Wine"
+        required: false
+        default: "--disable-tests"
+        type: string
+      build_target:
+        description: "Build target passed to make for the Wine binary"
+        required: false
+        default: "all"
+        type: string
+      artifact_name:
+        description: "Artifact name for the built macOS Wine binaries"
+        required: false
+        default: "macos-wine"
+        type: string
+
+jobs:
+  build-macos-wine:
+    runs-on: macos-14
+    timeout-minutes: 720
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+      CC: clang
+      CXX: clang++
+    steps:
+      - name: Install build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install autoconf automake bison cmake flex gettext gawk gnu-sed gperf libtool make m4 ninja pkg-config perl python@3.11
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix gnu-sed)/libexec/gnubin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix make)/libexec/gnubin" >> "$GITHUB_PATH"
+
+      - name: Prepare macOS SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          sdkroot=$(xcrun --sdk macosx --show-sdk-path)
+          echo "SDKROOT=$sdkroot" >> "$GITHUB_ENV"
+
+      - name: Fetch and unpack source
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          source_url="${{ inputs.source_repo }}"
+          source_path="${source_url%%\?*}"
+
+          source_root="$RUNNER_TEMP/crossover-src"
+          rm -rf "$source_root"
+          mkdir -p "$source_root"
+
+          case "$source_path" in
+            *.git|git@*|https://*|ssh://*)
+              git clone --depth 1 --branch "${{ inputs.source_ref }}" "$source_url" "$source_root"
+              ;;
+            *.tar.gz|*.tgz)
+              curl -fsSL "$source_url" -o "$RUNNER_TEMP/source.tar.gz"
+              tar -xzf "$RUNNER_TEMP/source.tar.gz" -C "$source_root" --strip-components=1
+              ;;
+            *.tar.xz)
+              curl -fsSL "$source_url" -o "$RUNNER_TEMP/source.tar.xz"
+              tar -xJf "$RUNNER_TEMP/source.tar.xz" -C "$source_root" --strip-components=1
+              ;;
+            *.zip)
+              curl -fsSL "$source_url" -o "$RUNNER_TEMP/source.zip"
+              unzip -q "$RUNNER_TEMP/source.zip" -d "$source_root"
+              first_dir=$(find "$source_root" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+              if [[ -n "$first_dir" && "$first_dir" != "$source_root" ]]; then
+                shopt -s dotglob nullglob
+                mv "$first_dir"/* "$source_root"/
+                rmdir "$first_dir"
+                shopt -u dotglob nullglob
+              fi
+              ;;
+            *)
+              echo "source_repo must be a git URL or archive URL"
+              exit 1
+              ;;
+          esac
+
+          source_dir="$source_root/${{ inputs.source_subdir }}"
+          if [[ ! -d "$source_dir" ]]; then
+            echo "Source directory not found: $source_dir"
+            exit 1
+          fi
+
+          echo "SOURCE_DIR=$source_dir" >> "$GITHUB_ENV"
+
+      - name: Bootstrap configure scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -x "$SOURCE_DIR/autogen.sh" ]]; then
+            (cd "$SOURCE_DIR" && ./autogen.sh)
+          elif [[ -x "$SOURCE_DIR/bootstrap" ]]; then
+            (cd "$SOURCE_DIR" && ./bootstrap)
+          fi
+
+      - name: Verify macOS Wine source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! -d "$SOURCE_DIR" ]]; then
+            echo "Source tree is missing"
+            exit 1
+          fi
+
+          if [[ ! -d "$SOURCE_DIR/dlls" && ! -f "$SOURCE_DIR/configure" ]]; then
+            echo "Expected a Wine-like source tree for macOS build"
+            exit 1
+          fi
+
+      - name: Configure build
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          build_dir="$SOURCE_DIR/build"
+          mkdir -p "$build_dir"
+          echo "BUILD_DIR=$build_dir" >> "$GITHUB_ENV"
+
+          if [[ -x "$SOURCE_DIR/configure" ]]; then
+            (cd "$build_dir" && "$SOURCE_DIR/configure" ${{ inputs.configure_args }})
+          elif [[ -f "$SOURCE_DIR/CMakeLists.txt" ]]; then
+            cmake -S "$SOURCE_DIR" -B "$build_dir" -G Ninja
+          else
+            echo "No supported build system found in the source tree"
+            exit 1
+          fi
+
+      - name: Build Wine binary
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          jobs=$(sysctl -n hw.ncpu)
+          if [[ -f "$BUILD_DIR/build.ninja" ]]; then
+            cmake --build "$BUILD_DIR" --parallel "$jobs" --target "${{ inputs.build_target }}"
+          else
+            make -C "$BUILD_DIR" -j"$jobs" "${{ inputs.build_target }}"
+          fi
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          artifact_dir="$RUNNER_TEMP/crossover-artifacts"
+          rm -rf "$artifact_dir"
+          mkdir -p "$artifact_dir"
+
+          find "$BUILD_DIR" -type f \( -name wine -o -name wine64 -o -name wineserver \) -perm -111 -exec cp -p {} "$artifact_dir/" \;
+
+          if [[ -z "$(find "$artifact_dir" -maxdepth 1 -type f | head -n 1)" ]]; then
+            echo "No executable Wine binaries were found after the build"
+            exit 1
+          fi
+
+          echo "ARTIFACT_DIR=$artifact_dir" >> "$GITHUB_ENV"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ env.ARTIFACT_DIR }}
+          if-no-files-found: error

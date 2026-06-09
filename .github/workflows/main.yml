@@ -1,0 +1,38 @@
+name: Build winecx
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: CrossOver source version
+        required: true
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Make scripts executable
+        run: chmod +x ./scripts/build-wine.sh
+
+      - name: Install dependencies
+        run: |
+          brew install bison ccache gettext mingw-w64 pkgconfig freetype gnutls libpcap sdl2 molten-vk vulkan-loader vulkan-headers
+
+      - uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: winecx-${{ inputs.version }}
+
+      - name: Build wine
+        run: ./scripts/build-wine.sh "${{ inputs.version }}"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ inputs.version }}
+          name: winecx ${{ inputs.version }}
+          files: winecx-${{ inputs.version }}-osx64.tar.gz
+          fail_on_unmatched_files: true

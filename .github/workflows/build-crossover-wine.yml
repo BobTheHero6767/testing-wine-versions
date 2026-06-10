@@ -206,14 +206,13 @@ jobs:
 
           # 64-bit Windows DLLs
           mkdir -p "${WINE_ROOT}/share/dxmt/x86_64"
-          find "${DXMT_INSTALL}" -path "*/x86_64/*.dll" -type f \
-            -exec cp {} "${WINE_ROOT}/share/dxmt/x86_64/" \;
+          find "${DXMT_INSTALL}" -path "*/x86_64-windows/*.dll" -type f \
+           -exec cp {} "${WINE_ROOT}/share/dxmt/x86_64/" \;
 
           # 32-bit Windows DLLs (strictly x86, not x86_64)
           mkdir -p "${WINE_ROOT}/share/dxmt/x86"
-          find "${DXMT_INSTALL}" -name "*.dll" -type f \
-            | grep -E '/x86/[^/]+$' \
-            | xargs -I{} cp {} "${WINE_ROOT}/share/dxmt/x86/"
+          find "${DXMT_INSTALL}" -path "*/i386-windows/*.dll" -type f \
+           -exec cp {} "${WINE_ROOT}/share/dxmt/x86/" \;
 
           X64=$(ls "${WINE_ROOT}/share/dxmt/x86_64/" | wc -l | tr -d ' ')
           X86=$(ls "${WINE_ROOT}/share/dxmt/x86/"    | wc -l | tr -d ' ')

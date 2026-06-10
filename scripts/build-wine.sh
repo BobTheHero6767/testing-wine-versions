@@ -82,7 +82,7 @@ pushd "${BUILDDIR}" >/dev/null
     --without-gettextpo \
     --without-gphoto \
     --without-gssapi \
-    --without-gstreamer \
+    --with-gstreamer \
     --without-inotify \
     --without-krb5 \
     --without-netapi \
@@ -104,7 +104,7 @@ endgroup
 group "Stage bundle"
 rm -rf "${STAGEDIR}"
 mkdir -p "${BUNDLE_RES}/wine" "${BUNDLE_MACOS}" "${DESTROOT}"
-make -C "${BUILDDIR}" install-lib DESTDIR="${DESTROOT}"
+make -C "${BUILDDIR}" install DESTDIR="${DESTROOT}"
 mv "${DESTROOT}"/* "${BUNDLE_RES}/wine/"
 rmdir "${DESTROOT}"
 test -x "${BUNDLE_RES}/wine/bin/wine"

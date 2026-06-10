@@ -1,4 +1,4 @@
-name: Build winecx
+name: Build winecx26.2
 on:
   workflow_dispatch:
     inputs:

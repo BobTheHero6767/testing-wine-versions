@@ -129,6 +129,7 @@ collect_brew_deps() {
     | grep -v '\.framework' \
     | grep -v "${BUNDLE_RES}" \
     | sort -u
+    || true
 }
 
 copy_to_lib() {
@@ -143,12 +144,12 @@ echo "=== Pass 1: direct Wine deps ==="
 {
   find "${BUNDLE_RES}/wine/bin" -type f
   find "${BUNDLE_RES}/wine/lib/wine" \( -name "*.so" -o -name "*.dylib" \) -type f
-} | collect_brew_deps > /tmp/deps1.txt
+} | collect_brew_deps > /tmp/deps1.txt || true
 copy_to_lib /tmp/deps1.txt
 
 echo "=== Pass 2: transitive deps ==="
 find "${WINE_LIB}" -maxdepth 1 -name "*.dylib" \
-  | collect_brew_deps > /tmp/deps2.txt
+  | collect_brew_deps > /tmp/deps2.txt || true
 copy_to_lib /tmp/deps2.txt
 
 echo "=== GStreamer plugins ==="

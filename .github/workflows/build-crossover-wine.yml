@@ -26,7 +26,7 @@ jobs:
           brew install bison ccache gettext mingw-w64 pkgconfig \
             freetype gnutls libpcap sdl2 molten-vk \
             vulkan-loader vulkan-headers cmake ninja \
-            gstreamer gst-plugins-base
+            gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad
 
       - name: Pre-flight checks
         run: |

@@ -123,38 +123,13 @@ group "Bundle external dylibs"
 set +o pipefail
 WINE_LIB="${BUNDLE_RES}/wine/lib"
 
-collect_brew_deps() {
-  xargs otool -L 2>/dev/null \
-    | awk '/^\t/{print $1}' \
-    | grep -E '^/(usr/local|opt/homebrew)' \
-    | grep -v '\.framework' \
-    | grep -v "${BUNDLE_RES}" \
-    | sort -u
-    
-}
-
-copy_to_lib() {
-  while IFS= read -r dep; do
-    [[ -z "$dep" || ! -f "$dep" ]] && continue
-    depname="$(basename "$dep")"
-    cp -Ln "$dep" "${WINE_LIB}/${depname}" 2>/dev/null && echo "  ✓ ${depname}"
-  done < "$1"
-}
-
-echo "=== Pass 1: direct Wine deps ==="
-{
-  find "${BUNDLE_RES}/wine/bin" -type f
-  find "${BUNDLE_RES}/wine/lib/wine" \( -name "*.so" -o -name "*.dylib" \) -type f
-} | collect_brew_deps > /tmp/deps1.txt
-copy_to_lib /tmp/deps1.txt
-
-echo "=== Pass 2: transitive deps ==="
-find "${WINE_LIB}" -maxdepth 1 -name "*.dylib" \
-  | collect_brew_deps > /tmp/deps2.txt
-copy_to_lib /tmp/deps2.txt
-
-echo "=== Ensure dlopen libs (not caught by otool) ==="
-for formula in freetype glib; do
+echo "=== Bundle all Wine runtime deps ==="
+for formula in \
+  freetype brotli libpng zlib \
+  gnutls nettle p11-kit gmp libtasn1 \
+  glib gettext sdl2 libpcap libjpeg \
+  libtiff little-cms2 libxml2 libxslt openldap \
+  unixodbc; do
   found=""
   for candidate in \
     "${BREW_PREFIX}/opt/${formula}/lib" \
@@ -169,6 +144,21 @@ for formula in freetype glib; do
     [[ -n "$found" ]] && break
   done
   [[ -n "$found" ]] || echo "  ✗ ${formula} NOT FOUND on runner"
+done
+
+echo "=== Fix internal Homebrew paths in bundled dylibs ==="
+for dylib in "${WINE_LIB}"/*.dylib; do
+  [[ -f "$dylib" ]] || continue
+  while IFS= read -r dep; do
+    [[ "$dep" =~ ^(/usr/local/|/opt/homebrew/) ]] || continue
+    depname=$(basename "$dep")
+    if [[ -f "${WINE_LIB}/${depname}" ]]; then
+      install_name_tool -change "$dep" "@loader_path/${depname}" "$dylib" 2>/dev/null
+      echo "  ✓ Rewrote $(basename $dylib): ${depname}"
+    else
+      echo "  ✗ Missing dep: ${depname} (needed by $(basename $dylib))"
+    fi
+  done < <(otool -L "$dylib" 2>/dev/null | awk 'NR>1 {print $1}')
 done
 
 echo "=== GStreamer plugins ==="

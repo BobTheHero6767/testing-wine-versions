@@ -50,7 +50,7 @@ export LIBRARY_PATH="${BREW_PREFIX}/lib"
 export MACOSX_DEPLOYMENT_TARGET=10.15
 export CFLAGS="-O2 -Wno-deprecated-declarations -Wno-format"
 export CROSSCFLAGS="-O2 -Wno-incompatible-pointer-types"
-export LDFLAGS="-Wl,-headerpad_max_install_names -Wl,-rpath,@loader_path/../../ -Wl,-rpath,${BREW_PREFIX}/lib"
+export LDFLAGS="-Wl,-headerpad_max_install_names -Wl,-rpath,@loader_path/../lib -Wl,-rpath,@loader_path/../../ -Wl,-rpath,${BREW_PREFIX}/lib"
 export PATH="${BREW_PREFIX}/opt/bison/bin:${PATH}"
 endgroup
 
@@ -117,7 +117,51 @@ EOF
 chmod +x "${BUNDLE_MACOS}/wine"
 cp "${SCRIPTDIR}/bundle/PkgInfo" "${BUNDLE_CONTENTS}/PkgInfo"
 sed "s/@VERSION@/${VERSION}/g" "${SCRIPTDIR}/bundle/Info.plist.in" > "${BUNDLE_CONTENTS}/Info.plist"
-codesign --force --deep --sign - "${APPDIR}"
+endgroup
+
+group "Bundle external dylibs"
+WINE_LIB="${BUNDLE_RES}/wine/lib"
+
+collect_brew_deps() {
+  xargs otool -L 2>/dev/null \
+    | awk '/^\t/{print $1}' \
+    | grep -E '^/(usr/local|opt/homebrew)' \
+    | grep -v '\.framework' \
+    | grep -v "${BUNDLE_RES}" \
+    | sort -u
+}
+
+copy_to_lib() {
+  while IFS= read -r dep; do
+    [[ -z "$dep" || ! -f "$dep" ]] && continue
+    depname="$(basename "$dep")"
+    cp -n "$dep" "${WINE_LIB}/${depname}" 2>/dev/null && echo "  ✓ ${depname}"
+  done < "$1"
+}
+
+echo "=== Pass 1: direct Wine deps ==="
+{
+  find "${BUNDLE_RES}/wine/bin" -type f
+  find "${BUNDLE_RES}/wine/lib/wine" \( -name "*.so" -o -name "*.dylib" \) -type f
+} | collect_brew_deps > /tmp/deps1.txt
+copy_to_lib /tmp/deps1.txt
+
+echo "=== Pass 2: transitive deps ==="
+find "${WINE_LIB}" -maxdepth 1 -name "*.dylib" \
+  | collect_brew_deps > /tmp/deps2.txt
+copy_to_lib /tmp/deps2.txt
+
+echo "=== GStreamer plugins ==="
+mkdir -p "${WINE_LIB}/gstreamer-1.0"
+for gst_dir in \
+  "${BREW_PREFIX}/lib/gstreamer-1.0" \
+  "/Library/Frameworks/GStreamer.framework/Versions/1.0/lib/gstreamer-1.0"; do
+  [[ -d "$gst_dir" ]] || continue
+  cp "$gst_dir"/*.dylib "${WINE_LIB}/gstreamer-1.0/" 2>/dev/null || true
+  echo "  ✓ plugins from ${gst_dir}"
+done
+
+echo "Total dylibs bundled: $(ls -1 "${WINE_LIB}" | grep '\.dylib$' | wc -l | tr -d ' ')"
 endgroup
 
 group "Package artifact"

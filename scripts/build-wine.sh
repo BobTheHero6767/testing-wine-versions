@@ -137,7 +137,7 @@ copy_to_lib() {
   while IFS= read -r dep; do
     [[ -z "$dep" || ! -f "$dep" ]] && continue
     depname="$(basename "$dep")"
-    cp -n "$dep" "${WINE_LIB}/${depname}" 2>/dev/null && echo "  ✓ ${depname}"
+    cp -Ln "$dep" "${WINE_LIB}/${depname}" 2>/dev/null && echo "  ✓ ${depname}"
   done < "$1"
 }
 
@@ -153,6 +153,24 @@ find "${WINE_LIB}" -maxdepth 1 -name "*.dylib" \
   | collect_brew_deps > /tmp/deps2.txt
 copy_to_lib /tmp/deps2.txt
 
+echo "=== Ensure dlopen libs (not caught by otool) ==="
+for formula in freetype glib; do
+  found=""
+  for candidate in \
+    "${BREW_PREFIX}/opt/${formula}/lib" \
+    "${BREW_PREFIX}/lib" \
+    "/usr/local/opt/${formula}/lib" \
+    "/usr/local/lib"; do
+    [[ -d "$candidate" ]] || continue
+    while IFS= read -r dylib; do
+      cp -Lf "$dylib" "${WINE_LIB}/" && echo "  ✓ $(basename "$dylib") (from ${candidate})"
+      found=1
+    done < <(find "$candidate" -maxdepth 1 -name "lib${formula}*.dylib" 2>/dev/null)
+    [[ -n "$found" ]] && break
+  done
+  [[ -n "$found" ]] || echo "  ✗ ${formula} NOT FOUND on runner"
+done
+
 echo "=== GStreamer plugins ==="
 mkdir -p "${WINE_LIB}/gstreamer-1.0"
 for gst_dir in \
@@ -164,6 +182,8 @@ for gst_dir in \
 done
 
 echo "Total dylibs bundled: $(ls -1 "${WINE_LIB}" | grep '\.dylib$' | wc -l | tr -d ' ')"
+echo "=== Critical lib check ==="
+ls "${WINE_LIB}" | grep -E 'freetype|gnutls|SDL2' || echo "WARNING: missing critical libs"
 endgroup
 
 group "Package artifact"

@@ -128,8 +128,8 @@ collect_brew_deps() {
     | grep -E '^/(usr/local|opt/homebrew)' \
     | grep -v '\.framework' \
     | grep -v "${BUNDLE_RES}" \
-    | sort -u
-    || true
+    | sort -u || true
+    
 }
 
 copy_to_lib() {

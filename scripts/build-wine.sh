@@ -37,6 +37,8 @@ rm -rf "${WORKDIR}"
 mkdir -p "${WORKDIR}"
 tar -xzf "${TARBALL}" -C "${WORKDIR}"
 test -x "${WORKDIR}/sources/wine/configure"
+echo "=== winemetal stub check ==="
+ls "${WORKDIR}/sources/wine/dlls/" | grep winemetal || echo "winemetal NOT found"
 endgroup
 
 group "Configure environment"

@@ -149,6 +149,25 @@ find "${BUNDLE_RES}/wine/bin" "${WINE_UNIX_LIB}" -type f \
   done < <(otool -L "$f" 2>/dev/null | awk 'NR>1{print $1}')
 done
 
+echo "=== Bundle dlopen dependencies (freetype / gnutls / SDL2) ==="
+for candidate in \
+  "${BREW_PREFIX}/opt/freetype/lib/libfreetype.6.dylib" \
+  "/usr/local/opt/freetype/lib/libfreetype.6.dylib"; do
+  [[ -f "$candidate" ]] && { bundle_dep "$candidate"; break; }
+done
+for candidate in \
+  "${BREW_PREFIX}/opt/gnutls/lib/libgnutls.30.dylib" \
+  "/usr/local/opt/gnutls/lib/libgnutls.30.dylib"; do
+  [[ -f "$candidate" ]] && { bundle_dep "$candidate"; break; }
+done
+for candidate in \
+  "${BREW_PREFIX}/opt/sdl2/lib/libSDL2-2.0.0.dylib" \
+  "/usr/local/opt/sdl2/lib/libSDL2-2.0.0.dylib" \
+  "${BREW_PREFIX}/lib/libSDL2-2.0.0.dylib" \
+  "/usr/local/lib/libSDL2-2.0.0.dylib"; do
+  [[ -f "$candidate" ]] && { bundle_dep "$candidate"; break; }
+done
+
 echo "=== Bundle MoltenVK ==="
 MOLTEN_FOUND=""
 for candidate in \

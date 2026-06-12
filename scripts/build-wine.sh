@@ -110,6 +110,9 @@ rmdir "${DESTROOT}"
 test -x "${BUNDLE_RES}/wine/bin/wine"
 file "${BUNDLE_RES}/wine/bin/wine"
 "${BUNDLE_RES}/wine/bin/wine" --version
+DLL_COUNT=$(find "${BUNDLE_RES}/wine/lib/wine/x86_64-windows" -name "*.dll" 2>/dev/null | wc -l | tr -d ' ')
+echo "=== Build sanity: ${DLL_COUNT} PE DLLs ==="
+[[ "${DLL_COUNT}" -lt 200 ]] && { echo "✗ FATAL: build incomplete — only ${DLL_COUNT} PE DLLs (expect 200+)"; exit 1; }
 cat > "${BUNDLE_MACOS}/wine" <<'EOF'
 #!/bin/sh
 exec "$(dirname "$0")/../Resources/wine/bin/wine" "$@"
@@ -122,58 +125,94 @@ endgroup
 group "Bundle external dylibs"
 set +o pipefail
 WINE_LIB="${BUNDLE_RES}/wine/lib"
+WINE_UNIX_LIB="${BUNDLE_RES}/wine/lib/wine/x86_64-unix"
 
-echo "=== Bundle all Wine runtime deps ==="
-for formula in \
-  freetype brotli libpng zlib \
-  gnutls nettle p11-kit gmp libtasn1 \
-  glib gettext sdl2 libpcap libjpeg \
-  libtiff little-cms2 libxml2 libxslt openldap \
-  unixodbc; do
-  found=""
-  for candidate in \
-    "${BREW_PREFIX}/opt/${formula}/lib" \
-    "${BREW_PREFIX}/lib" \
-    "/usr/local/opt/${formula}/lib" \
-    "/usr/local/lib"; do
-    [[ -d "$candidate" ]] || continue
-    while IFS= read -r dylib; do
-      cp -Lf "$dylib" "${WINE_LIB}/" && echo "  ✓ $(basename "$dylib") (from ${candidate})"
-      found=1
-    done < <(find "$candidate" -maxdepth 1 -name "lib${formula}*.dylib" 2>/dev/null)
-    [[ -n "$found" ]] && break
-  done
-  [[ -n "$found" ]] || echo "  ✗ ${formula} NOT FOUND on runner"
+echo "=== Bundle all Wine runtime deps (otool-recursive) ==="
+bundle_dep() {
+  local src="$1" depname
+  depname=$(basename "$src")
+  [[ -f "${WINE_LIB}/${depname}" ]] && return 0
+  [[ -f "$src" ]] || return 0
+  cp -Lf "$src" "${WINE_LIB}/"
+  echo "  ✓ ${depname}"
+  while IFS= read -r tdep; do
+    [[ "$tdep" =~ ^(/usr/local/|/opt/homebrew/) ]] || continue
+    bundle_dep "$tdep"
+  done < <(otool -L "$src" 2>/dev/null | awk 'NR>1{print $1}')
+}
+find "${BUNDLE_RES}/wine/bin" "${WINE_UNIX_LIB}" -type f \
+  \( -name "wine" -o -name "wine64" -o -name "wineserver" -o -name "*.so" \) \
+| while read -r f; do
+  while IFS= read -r dep; do
+    [[ "$dep" =~ ^(/usr/local/|/opt/homebrew/) ]] || continue
+    bundle_dep "$dep"
+  done < <(otool -L "$f" 2>/dev/null | awk 'NR>1{print $1}')
 done
 
-echo "=== Fix internal Homebrew paths in bundled dylibs ==="
+echo "=== Bundle MoltenVK ==="
+MOLTEN_FOUND=""
+for candidate in \
+  "${BREW_PREFIX}/opt/molten-vk/lib/libMoltenVK.dylib" \
+  "${BREW_PREFIX}/lib/libMoltenVK.dylib" \
+  "/usr/local/opt/molten-vk/lib/libMoltenVK.dylib" \
+  "/usr/local/lib/libMoltenVK.dylib"; do
+  if [[ -f "$candidate" ]]; then
+    cp -Lf "$candidate" "${WINE_LIB}/"
+    echo "  ✓ libMoltenVK.dylib"
+    MOLTEN_FOUND=1; break
+  fi
+done
+[[ -n "$MOLTEN_FOUND" ]] || echo "  ✗ WARNING: libMoltenVK.dylib not found — Vulkan/Metal bridge absent"
+
+echo "=== Rewrite Homebrew paths in bundled dylibs ==="
 for dylib in "${WINE_LIB}"/*.dylib; do
   [[ -f "$dylib" ]] || continue
   while IFS= read -r dep; do
     [[ "$dep" =~ ^(/usr/local/|/opt/homebrew/) ]] || continue
     depname=$(basename "$dep")
-    if [[ -f "${WINE_LIB}/${depname}" ]]; then
-      install_name_tool -change "$dep" "@loader_path/${depname}" "$dylib" 2>/dev/null
-      echo "  ✓ Rewrote $(basename $dylib): ${depname}"
-    else
-      echo "  ✗ Missing dep: ${depname} (needed by $(basename $dylib))"
-    fi
-  done < <(otool -L "$dylib" 2>/dev/null | awk 'NR>1 {print $1}')
+    [[ -f "${WINE_LIB}/${depname}" ]] || continue
+    install_name_tool -change "$dep" "@loader_path/${depname}" "$dylib" 2>/dev/null \
+      && echo "  ✓ $(basename $dylib) → ${depname}"
+  done < <(otool -L "$dylib" 2>/dev/null | awk 'NR>1{print $1}')
+done
+
+echo "=== Rewrite Homebrew paths in Wine binaries ==="
+find "${BUNDLE_RES}/wine/bin" -type f \( -name "wine" -o -name "wine64" -o -name "wineserver" \) \
+| while read -r binary; do
+  while IFS= read -r dep; do
+    [[ "$dep" =~ ^(/usr/local/|/opt/homebrew/) ]] || continue
+    depname=$(basename "$dep")
+    [[ -f "${WINE_LIB}/${depname}" ]] || continue
+    install_name_tool -change "$dep" "@loader_path/../lib/${depname}" "$binary" 2>/dev/null \
+      && echo "  ✓ bin/$(basename $binary) → ${depname}"
+  done < <(otool -L "$binary" 2>/dev/null | awk 'NR>1{print $1}')
+done
+
+echo "=== Rewrite Homebrew paths in .so modules ==="
+find "${WINE_UNIX_LIB}" -name "*.so" | while read -r sofile; do
+  while IFS= read -r dep; do
+    [[ "$dep" =~ ^(/usr/local/|/opt/homebrew/) ]] || continue
+    depname=$(basename "$dep")
+    [[ -f "${WINE_LIB}/${depname}" ]] || continue
+    install_name_tool -change "$dep" "@loader_path/../../${depname}" "$sofile" 2>/dev/null \
+      && echo "  ✓ $(basename $sofile) → ${depname}"
+  done < <(otool -L "$sofile" 2>/dev/null | awk 'NR>1{print $1}')
 done
 
 echo "=== GStreamer plugins ==="
 mkdir -p "${WINE_LIB}/gstreamer-1.0"
 for gst_dir in \
   "${BREW_PREFIX}/lib/gstreamer-1.0" \
+  "/usr/local/lib/gstreamer-1.0" \
   "/Library/Frameworks/GStreamer.framework/Versions/1.0/lib/gstreamer-1.0"; do
   [[ -d "$gst_dir" ]] || continue
   cp "$gst_dir"/*.dylib "${WINE_LIB}/gstreamer-1.0/" 2>/dev/null || true
-  echo "  ✓ plugins from ${gst_dir}"
+  echo "  ✓ GStreamer plugins from ${gst_dir}"
 done
 
 echo "Total dylibs bundled: $(ls -1 "${WINE_LIB}" | grep '\.dylib$' | wc -l | tr -d ' ')"
 echo "=== Critical lib check ==="
-ls "${WINE_LIB}" | grep -E 'freetype|gnutls|SDL2' || echo "WARNING: missing critical libs"
+ls "${WINE_LIB}" | grep -iE 'freetype|gnutls|MoltenVK|SDL' || echo "WARNING: missing critical libs"
 endgroup
 
 group "Package artifact"

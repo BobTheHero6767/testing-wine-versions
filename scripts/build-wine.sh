@@ -41,24 +41,42 @@ echo "=== winemetal stub check ==="
 ls "${WORKDIR}/sources/wine/dlls/" | grep winemetal || echo "winemetal NOT found"
 endgroup
 
-group "Inject WineMetalLayer — diagnostic"
+group "Inject WineMetalLayer from riverfog7/macports-wine"
 echo "=== Cloning riverfog7/macports-wine ==="
 git clone --depth 1 https://github.com/riverfog7/macports-wine.git "${WORKDIR}/macports-src"
 
-echo "=== top-level structure ==="
-ls -la "${WORKDIR}/macports-src/"
+WINE_SRC="${WORKDIR}/sources/wine"
+STABLE="${WORKDIR}/macports-src/emulators/wine-stable/files"
+DEVEL="${WORKDIR}/macports-src/emulators/wine-devel/files"
 
-echo "=== all port directories ==="
-find "${WORKDIR}/macports-src" -name "Portfile" | sort
+echo "=== Patch 1: winemac CX hack ==="
+git -C "${WINE_SRC}" apply --3way --whitespace=nowarn \
+    "${DEVEL}/0006-winemac-CW-HACK-22435.diff" \
+    && echo "  ✓ applied" \
+    || echo "  ⚠ skipped (likely already in CX source — not fatal)"
 
-echo "=== all patch files ==="
-find "${WORKDIR}/macports-src" -name "*.patch" | sort
+echo "=== Patch 2: winemac DXMT export ==="
+git -C "${WINE_SRC}" apply --3way --whitespace=nowarn \
+    "${STABLE}/0014-winemac-DXMT-export.diff" \
+    && echo "  ✓ applied" \
+    || echo "  ✗ FAILED"
 
-echo "=== metal/winemac patches ==="
-find "${WORKDIR}/macports-src" \( -iname "*metal*" -o -iname "*winemac*" \) | sort || true
+echo "=== Patch 3: WineMetalLayer stub ==="
+git -C "${WINE_SRC}" apply --3way --whitespace=nowarn \
+    "${STABLE}/0015-winemetal-new-stub.diff" \
+    && echo "  ✓ applied" \
+    || {
+        echo "  ⚠ stable version failed, trying devel version..."
+        git -C "${WINE_SRC}" apply --3way --whitespace=nowarn \
+            "${DEVEL}/0017-winemetal-new-stub.diff" \
+            && echo "  ✓ devel version applied" \
+            || echo "  ✗ both versions failed"
+    }
 
-echo "=== DIAGNOSTIC DONE — intentional stop ==="
-exit 1
+echo "=== Verify WineMetalLayer present ==="
+grep -rl "WineMetalLayer" "${WINE_SRC}/dlls/winemac.drv/" \
+    && echo "  ✓ WineMetalLayer found in source" \
+    || { echo "  ✗ WineMetalLayer NOT found — patches did not apply"; exit 1; }
 endgroup
 
 group "Configure environment"

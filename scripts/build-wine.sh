@@ -41,6 +41,23 @@ echo "=== winemetal stub check ==="
 ls "${WORKDIR}/sources/wine/dlls/" | grep winemetal || echo "winemetal NOT found"
 endgroup
 
+group "Inject WineMetalLayer from anime-game-wine 11.8"
+echo "=== Cloning anime-game-wine 11.8 ==="
+git clone --depth 1 --branch wine-11.8 \
+    https://github.com/yaagl/anime-game-wine.git "${WORKDIR}/agw-src" \
+    || git clone --depth 1 https://github.com/yaagl/anime-game-wine.git "${WORKDIR}/agw-src"
+
+echo "=== Replacing winemac.drv with Metal-patched version ==="
+cp -r "${WORKDIR}/agw-src/dlls/winemac.drv/"* \
+      "${WORKDIR}/sources/wine/dlls/winemac.drv/"
+echo "  ✓ winemac.drv replaced"
+
+echo "=== Verify WineMetalLayer present ==="
+grep -rl "WineMetalLayer" "${WORKDIR}/sources/wine/dlls/winemac.drv/" \
+    && echo "  ✓ WineMetalLayer found in source" \
+    || { echo "  ✗ WineMetalLayer NOT found — agw branch name may be wrong"; exit 1; }
+endgroup
+
 group "Configure environment"
 BREW_PREFIX="$(brew --prefix)"
 export CC="ccache clang"

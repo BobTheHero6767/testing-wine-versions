@@ -27,7 +27,7 @@ jobs:
             freetype gnutls libpcap sdl2 molten-vk \
             vulkan-loader vulkan-headers cmake ninja \
             gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad\
-            libxcb libx11 libegl
+            libxcb libx11 lcms2 faudio
 
       - name: Pre-flight checks
         run: |

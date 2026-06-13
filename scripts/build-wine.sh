@@ -106,7 +106,7 @@ pushd "${BUILDDIR}" >/dev/null
     --without-inotify \
     --without-krb5 \
     --without-netapi \
-    --without-opengl \
+    --with-opengl \
     --without-oss \
     --without-pulse \
     --without-sane \

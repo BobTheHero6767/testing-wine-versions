@@ -41,21 +41,24 @@ echo "=== winemetal stub check ==="
 ls "${WORKDIR}/sources/wine/dlls/" | grep winemetal || echo "winemetal NOT found"
 endgroup
 
-group "Inject WineMetalLayer from anime-game-wine 11.8"
-echo "=== Cloning anime-game-wine 11.8 ==="
-git clone --depth 1 --branch wine-11.8 \
-    https://github.com/yaagl/anime-game-wine.git "${WORKDIR}/agw-src" \
-    || git clone --depth 1 https://github.com/yaagl/anime-game-wine.git "${WORKDIR}/agw-src"
+group "Inject WineMetalLayer — diagnostic"
+echo "=== Cloning riverfog7/macports-wine ==="
+git clone --depth 1 https://github.com/riverfog7/macports-wine.git "${WORKDIR}/macports-src"
 
-echo "=== Replacing winemac.drv with Metal-patched version ==="
-cp -r "${WORKDIR}/agw-src/dlls/winemac.drv/"* \
-      "${WORKDIR}/sources/wine/dlls/winemac.drv/"
-echo "  ✓ winemac.drv replaced"
+echo "=== top-level structure ==="
+ls -la "${WORKDIR}/macports-src/"
 
-echo "=== Verify WineMetalLayer present ==="
-grep -rl "WineMetalLayer" "${WORKDIR}/sources/wine/dlls/winemac.drv/" \
-    && echo "  ✓ WineMetalLayer found in source" \
-    || { echo "  ✗ WineMetalLayer NOT found — agw branch name may be wrong"; exit 1; }
+echo "=== all port directories ==="
+find "${WORKDIR}/macports-src" -name "Portfile" | sort
+
+echo "=== all patch files ==="
+find "${WORKDIR}/macports-src" -name "*.patch" | sort
+
+echo "=== metal/winemac patches ==="
+find "${WORKDIR}/macports-src" \( -iname "*metal*" -o -iname "*winemac*" \) | sort || true
+
+echo "=== DIAGNOSTIC DONE — intentional stop ==="
+exit 1
 endgroup
 
 group "Configure environment"

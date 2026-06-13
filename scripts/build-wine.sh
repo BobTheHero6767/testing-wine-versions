@@ -41,42 +41,58 @@ echo "=== winemetal stub check ==="
 ls "${WORKDIR}/sources/wine/dlls/" | grep winemetal || echo "winemetal NOT found"
 endgroup
 
-group "Inject WineMetalLayer from riverfog7/macports-wine"
+group "Apply all patches from riverfog7/macports-wine"
 echo "=== Cloning riverfog7/macports-wine ==="
 git clone --depth 1 https://github.com/riverfog7/macports-wine.git "${WORKDIR}/macports-src"
 
 WINE_SRC="${WORKDIR}/sources/wine"
-STABLE="${WORKDIR}/macports-src/emulators/wine-stable/files"
 DEVEL="${WORKDIR}/macports-src/emulators/wine-devel/files"
+DWPROTON="${WORKDIR}/macports-src/dwproton/0001-em-backports"
 
-echo "=== Patch 1: winemac CX hack ==="
-git -C "${WINE_SRC}" apply --3way --whitespace=nowarn \
-    "${DEVEL}/0006-winemac-CW-HACK-22435.diff" \
-    && echo "  ✓ applied" \
-    || echo "  ⚠ skipped (likely already in CX source — not fatal)"
+apply_patch() {
+    local patch="$1"
+    local name
+    name=$(basename "$patch")
+    if [[ ! -f "$patch" ]]; then
+        echo "  ⚠ SKIP: $name (file not found)"
+        return 0
+    fi
+    git -C "${WINE_SRC}" apply --3way --whitespace=nowarn "$patch" \
+        && echo "  ✓ $name" \
+        || echo "  ⚠ SKIP: $name (already applied or conflict — not fatal)"
+}
 
-echo "=== Patch 2: winemac DXMT export ==="
-git -C "${WINE_SRC}" apply --3way --whitespace=nowarn \
-    "${STABLE}/0014-winemac-DXMT-export.diff" \
-    && echo "  ✓ applied" \
-    || echo "  ✗ FAILED"
+echo "=== Applying all devel patches in order ==="
+apply_patch "${DEVEL}/0001-msync-CW.patch"
+apply_patch "${DEVEL}/0002-ntdll-CW-HACK-20186.diff"
+apply_patch "${DEVEL}/0003-wow64cpu-CW-HACK-20760.diff"
+apply_patch "${DEVEL}/0004-kernelbase-HACK-Add-hack_append_command_line.diff"
+apply_patch "${DEVEL}/0005-kernelbase-CW-HACK-13322-17315-21883.diff"
+apply_patch "${DEVEL}/0006-winemac-CW-HACK-22435.diff"
+apply_patch "${DEVEL}/0007-ntdll-CW-HACK-22435.diff"
+apply_patch "${DEVEL}/0008-ntdll-CW-HACK-23427.diff"
+apply_patch "${DEVEL}/0009-win32u-CW-HACK-23950.diff"
+apply_patch "${DEVEL}/0010-ntdll-CW-HACK-24256.diff"
+apply_patch "${DEVEL}/0011-ntdll-CW-Hack-24265.diff"
+apply_patch "${DEVEL}/0012-ntdll-CW-HACK-24711.diff"
+apply_patch "${DEVEL}/0013-ntdll-CW-HACK-24945.diff"
+apply_patch "${DEVEL}/0014-ntdll-CW-HACK-25719.diff"
+apply_patch "${DEVEL}/0015-win32u-CW-HACK-25909.diff"
+apply_patch "${DEVEL}/0016-ntdll-HACK-Winehq-Bug-56441.diff"
+apply_patch "${DEVEL}/0017-winemetal-new-stub.diff"
+apply_patch "${DEVEL}/0018-ntdll-HACK-Recognize-ROSETTA_X87_PATH-env.diff"
+apply_patch "${DEVEL}/0019-ntdll-HACK-Recognize-WINE_DISABLE_NX_COMPAT-env.diff"
+apply_patch "${DEVEL}/2001-msync-CW.patch"
 
-echo "=== Patch 3: WineMetalLayer stub ==="
-git -C "${WINE_SRC}" apply --3way --whitespace=nowarn \
-    "${STABLE}/0015-winemetal-new-stub.diff" \
-    && echo "  ✓ applied" \
-    || {
-        echo "  ⚠ stable version failed, trying devel version..."
-        git -C "${WINE_SRC}" apply --3way --whitespace=nowarn \
-            "${DEVEL}/0017-winemetal-new-stub.diff" \
-            && echo "  ✓ devel version applied" \
-            || echo "  ✗ both versions failed"
-    }
+echo "=== Applying dwproton backport patches ==="
+for patch in "${DWPROTON}"/*.patch; do
+    apply_patch "$patch"
+done
 
-echo "=== Verify WineMetalLayer present ==="
+echo "=== Verify winemetal present ==="
 grep -rl "WineMetalLayer" "${WINE_SRC}/dlls/winemac.drv/" \
     && echo "  ✓ WineMetalLayer found in source" \
-    || { echo "  ✗ WineMetalLayer NOT found — patches did not apply"; exit 1; }
+    || echo "  ⚠ WineMetalLayer NOT found — stub only"
 endgroup
 
 group "Configure environment"

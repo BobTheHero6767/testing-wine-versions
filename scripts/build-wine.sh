@@ -125,7 +125,7 @@ export CFLAGS="-O2 -Wno-deprecated-declarations -Wno-format"
 export CROSSCFLAGS="-O2 -Wno-incompatible-pointer-types"
 export LDFLAGS="-Wl,-headerpad_max_install_names -Wl,-rpath,@loader_path/../lib -Wl,-rpath,@loader_path/../../ -Wl,-rpath,${BREW_PREFIX}/lib"
 export PATH="${BREW_PREFIX}/opt/bison/bin:${PATH}"
-export ac_cv_lib_soname_vulkan=""
+export ac_cv_lib_soname_vulkan="libMoltenVK.dylib"
 endgroup
 
 group "Configure wine"

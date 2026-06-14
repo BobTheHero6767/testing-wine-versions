@@ -86,50 +86,30 @@ apply_patch "${DEVEL}/1001-kernelbase-CW-HACK-19610.diff" # ADD: was missing ent
 apply_patch "${DEVEL}/2001-msync-CW.patch"
 
 echo "=== Applying dwproton backport patches ==="
-for patch in "${DWPROTON}"/*.patch; do
-    apply_patch "$patch"
-done
-
+if [[ -d "${DWPROTON}" ]]; then
+    for patch in "${DWPROTON}"/*.patch "${DWPROTON}"/*.diff; do
+        [[ -f "$patch" ]] && apply_patch "$patch"
+    done
+else
+    echo "  ⚠ dwproton dir not found at: ${DWPROTON}"
+    echo "    Available dirs:"
+    ls "${WORKDIR}/macports-src/dwproton/" 2>/dev/null || echo "    (dwproton folder missing)"
+fi
 # DIAGNOSTICS: Instead of hard-fail, gather detailed info about what
 # 0006 actually touched and where WineMetalLayer ended up (if anywhere)
 echo ""
-echo "=== DIAGNOSTIC: What files did patch 0006 actually modify? ==="
-git apply --stat "${DEVEL}/0006-winemac-CW-HACK-22435.diff" 2>/dev/null \
-    || echo "  (--stat failed — patch may already be fully merged)"
-
-echo ""
-echo "=== DIAGNOSTIC: Search for Metal-related keywords in winemac.drv/ ==="
-echo "  (searching for: WineMetalLayer, metalLayer, CAMetalLayer, metal_layer, winemetal, MetalView, MetalLayer)"
-FOUND_COUNT=$(find "${WINE_SRC}/dlls/winemac.drv/" -type f \( -name "*.m" -o -name "*.h" -o -name "*.c" \) \
-    -exec grep -l "WineMetalLayer\|metalLayer\|CAMetalLayer\|metal_layer\|winemetal\|MetalView\|MetalLayer" {} \; \
-    2>/dev/null | wc -l)
-if [[ "$FOUND_COUNT" -gt 0 ]]; then
-    echo "  ✓ Found Metal references in ${FOUND_COUNT} file(s):"
-    find "${WINE_SRC}/dlls/winemac.drv/" -type f \( -name "*.m" -o -name "*.h" -o -name "*.c" \) \
-        -exec grep -l "WineMetalLayer\|metalLayer\|CAMetalLayer\|metal_layer\|winemetal\|MetalView\|MetalLayer" {} \; \
-        2>/dev/null
+echo "=== Verify 0006 WineMetalView + d3dmetal.c landed ==="
+METAL_VIEW=$(grep -c "WineMetalView" \
+    "${WINE_SRC}/dlls/winemac.drv/cocoa_window.m" 2>/dev/null || echo "0")
+D3DMETAL=$(test -f "${WINE_SRC}/dlls/winemac.drv/d3dmetal.c" && echo "1" || echo "0")
+if [[ "$METAL_VIEW" -gt 0 && "$D3DMETAL" -eq 1 ]]; then
+    echo "  ✓ WineMetalView in cocoa_window.m (${METAL_VIEW} refs) + d3dmetal.c present — patch 0006 landed correctly"
 else
-    echo "  ✗ NO Metal references found in winemac.drv/"
+    echo "  ✗ FATAL: 0006 did not apply correctly."
+    echo "    WineMetalView hits in cocoa_window.m: ${METAL_VIEW}"
+    echo "    d3dmetal.c present: ${D3DMETAL}"
+    exit 1
 fi
-
-echo ""
-echo "=== DIAGNOSTIC: Metal keywords in cocoa_window.m specifically ==="
-grep -n "etal\|METAL" "${WINE_SRC}/dlls/winemac.drv/cocoa_window.m" 2>/dev/null | head -20 \
-    || echo "  (no matches in cocoa_window.m)"
-
-echo ""
-echo "=== DIAGNOSTIC: New files in winemac.drv after patching ==="
-ls -1 "${WINE_SRC}/dlls/winemac.drv/" | grep -vE "\.o$|\.a$|Makefile"
-
-echo ""
-echo "=== DIAGNOSTIC: Git diff summary for winemac.drv ==="
-git -C "${WINE_SRC}" diff HEAD -- dlls/winemac.drv/ | head -100
-
-echo ""
-echo "========================================================================"
-echo "If you see Metal keywords above → patch worked, keep going."
-echo "If you see NONE above → patch 0006 needs manual conflict resolution."
-echo "========================================================================"
 endgroup
 
 group "Configure environment"

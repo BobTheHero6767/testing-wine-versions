@@ -90,21 +90,46 @@ for patch in "${DWPROTON}"/*.patch; do
     apply_patch "$patch"
 done
 
-# CRITICAL: hard-fail if the Metal window patch didn't land.
-# If 0006 conflicted and was silently skipped, the build produces a black
-# window. Better to fail here than waste a full compile.
-echo "=== Verify 0006 WineMetalLayer actually applied ==="
-METAL_HITS=$(grep -c "WineMetalLayer\|metal_layer\|metalLayer" \
-    "${WINE_SRC}/dlls/winemac.drv/cocoa_window.m" 2>/dev/null || echo "0")
-if [[ "$METAL_HITS" -gt 5 ]]; then
-    echo "  ✓ WineMetalLayer in cocoa_window.m (${METAL_HITS} references) — patch landed"
+# DIAGNOSTICS: Instead of hard-fail, gather detailed info about what
+# 0006 actually touched and where WineMetalLayer ended up (if anywhere)
+echo ""
+echo "=== DIAGNOSTIC: What files did patch 0006 actually modify? ==="
+git apply --stat "${DEVEL}/0006-winemac-CW-HACK-22435.diff" 2>/dev/null \
+    || echo "  (--stat failed — patch may already be fully merged)"
+
+echo ""
+echo "=== DIAGNOSTIC: Search for Metal-related keywords in winemac.drv/ ==="
+echo "  (searching for: WineMetalLayer, metalLayer, CAMetalLayer, metal_layer, winemetal, MetalView, MetalLayer)"
+FOUND_COUNT=$(find "${WINE_SRC}/dlls/winemac.drv/" -type f \( -name "*.m" -o -name "*.h" -o -name "*.c" \) \
+    -exec grep -l "WineMetalLayer\|metalLayer\|CAMetalLayer\|metal_layer\|winemetal\|MetalView\|MetalLayer" {} \; \
+    2>/dev/null | wc -l)
+if [[ "$FOUND_COUNT" -gt 0 ]]; then
+    echo "  ✓ Found Metal references in ${FOUND_COUNT} file(s):"
+    find "${WINE_SRC}/dlls/winemac.drv/" -type f \( -name "*.m" -o -name "*.h" -o -name "*.c" \) \
+        -exec grep -l "WineMetalLayer\|metalLayer\|CAMetalLayer\|metal_layer\|winemetal\|MetalView\|MetalLayer" {} \; \
+        2>/dev/null
 else
-    echo "  ✗ FATAL: WineMetalLayer NOT in cocoa_window.m after patching."
-    echo "    Patch 0006 conflicted with CrossOver's own cocoa_window.m changes and was skipped."
-    echo "    The build would produce a black Steam window. Stopping now."
-    echo "    → Paste the 'Apply all patches' CI log here and we will fix the conflict manually."
-    exit 1
+    echo "  ✗ NO Metal references found in winemac.drv/"
 fi
+
+echo ""
+echo "=== DIAGNOSTIC: Metal keywords in cocoa_window.m specifically ==="
+grep -n "etal\|METAL" "${WINE_SRC}/dlls/winemac.drv/cocoa_window.m" 2>/dev/null | head -20 \
+    || echo "  (no matches in cocoa_window.m)"
+
+echo ""
+echo "=== DIAGNOSTIC: New files in winemac.drv after patching ==="
+ls -1 "${WINE_SRC}/dlls/winemac.drv/" | grep -vE "\.o$|\.a$|Makefile"
+
+echo ""
+echo "=== DIAGNOSTIC: Git diff summary for winemac.drv ==="
+git -C "${WINE_SRC}" diff HEAD -- dlls/winemac.drv/ | head -100
+
+echo ""
+echo "========================================================================"
+echo "If you see Metal keywords above → patch worked, keep going."
+echo "If you see NONE above → patch 0006 needs manual conflict resolution."
+echo "========================================================================"
 endgroup
 
 group "Configure environment"

@@ -43,7 +43,7 @@ endgroup
 
 group "Apply all patches from riverfog7/macports-wine"
 echo "=== Cloning riverfog7/macports-wine ==="
-git clone --depth 1 https://github.com/riverfog7/macports-wine.git "${WORKDIR}/macports-src"
+git clone --depth 1 --branch patches https://github.com/riverfog7/macports-wine.git "${WORKDIR}/macports-src"
 
 WINE_SRC="${WORKDIR}/sources/wine"
 DEVEL="${WORKDIR}/macports-src/emulators/wine-devel/files"
@@ -63,12 +63,12 @@ apply_patch() {
 }
 
 echo "=== Applying all devel patches in order ==="
-apply_patch "${DEVEL}/0001-msync-CW.patch"
+apply_patch "${DEVEL}/0001-ntdll-CW-HACK-18947.diff"    # FIX: was wrong filename (0001-msync-CW.patch)
 apply_patch "${DEVEL}/0002-ntdll-CW-HACK-20186.diff"
 apply_patch "${DEVEL}/0003-wow64cpu-CW-HACK-20760.diff"
 apply_patch "${DEVEL}/0004-kernelbase-HACK-Add-hack_append_command_line.diff"
 apply_patch "${DEVEL}/0005-kernelbase-CW-HACK-13322-17315-21883.diff"
-apply_patch "${DEVEL}/0006-winemac-CW-HACK-22435.diff"
+apply_patch "${DEVEL}/0006-winemac-CW-HACK-22435.diff"   # CRITICAL: Metal window fix
 apply_patch "${DEVEL}/0007-ntdll-CW-HACK-22435.diff"
 apply_patch "${DEVEL}/0008-ntdll-CW-HACK-23427.diff"
 apply_patch "${DEVEL}/0009-win32u-CW-HACK-23950.diff"
@@ -82,6 +82,7 @@ apply_patch "${DEVEL}/0016-ntdll-HACK-Winehq-Bug-56441.diff"
 apply_patch "${DEVEL}/0017-winemetal-new-stub.diff"
 apply_patch "${DEVEL}/0018-ntdll-HACK-Recognize-ROSETTA_X87_PATH-env.diff"
 apply_patch "${DEVEL}/0019-ntdll-HACK-Recognize-WINE_DISABLE_NX_COMPAT-env.diff"
+apply_patch "${DEVEL}/1001-kernelbase-CW-HACK-19610.diff" # ADD: was missing entirely
 apply_patch "${DEVEL}/2001-msync-CW.patch"
 
 echo "=== Applying dwproton backport patches ==="
@@ -89,10 +90,21 @@ for patch in "${DWPROTON}"/*.patch; do
     apply_patch "$patch"
 done
 
-echo "=== Verify winemetal present ==="
-grep -rl "WineMetalLayer" "${WINE_SRC}/dlls/winemac.drv/" \
-    && echo "  ✓ WineMetalLayer found in source" \
-    || echo "  ⚠ WineMetalLayer NOT found — stub only"
+# CRITICAL: hard-fail if the Metal window patch didn't land.
+# If 0006 conflicted and was silently skipped, the build produces a black
+# window. Better to fail here than waste a full compile.
+echo "=== Verify 0006 WineMetalLayer actually applied ==="
+METAL_HITS=$(grep -c "WineMetalLayer\|metal_layer\|metalLayer" \
+    "${WINE_SRC}/dlls/winemac.drv/cocoa_window.m" 2>/dev/null || echo "0")
+if [[ "$METAL_HITS" -gt 5 ]]; then
+    echo "  ✓ WineMetalLayer in cocoa_window.m (${METAL_HITS} references) — patch landed"
+else
+    echo "  ✗ FATAL: WineMetalLayer NOT in cocoa_window.m after patching."
+    echo "    Patch 0006 conflicted with CrossOver's own cocoa_window.m changes and was skipped."
+    echo "    The build would produce a black Steam window. Stopping now."
+    echo "    → Paste the 'Apply all patches' CI log here and we will fix the conflict manually."
+    exit 1
+fi
 endgroup
 
 group "Configure environment"

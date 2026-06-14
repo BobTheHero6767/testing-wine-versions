@@ -47,7 +47,7 @@ git clone --depth 1 --branch patches https://github.com/riverfog7/macports-wine.
 
 WINE_SRC="${WORKDIR}/sources/wine"
 DEVEL="${WORKDIR}/macports-src/emulators/wine-devel/files"
-DWPROTON="${WORKDIR}/macports-src/dwproton/0001-em-backports"
+DWPROTON_BASE="${WORKDIR}/macports-src/emulators/wine-devel/files/dwproton"
 
 apply_patch() {
     local patch="$1"
@@ -86,14 +86,18 @@ apply_patch "${DEVEL}/1001-kernelbase-CW-HACK-19610.diff" # ADD: was missing ent
 apply_patch "${DEVEL}/2001-msync-CW.patch"
 
 echo "=== Applying dwproton backport patches ==="
-if [[ -d "${DWPROTON}" ]]; then
-    for patch in "${DWPROTON}"/*.patch "${DWPROTON}"/*.diff; do
-        [[ -f "$patch" ]] && apply_patch "$patch"
+if [[ -d "${DWPROTON_BASE}" ]]; then
+    for subdir in "${DWPROTON_BASE}/0001-em-backports" "${DWPROTON_BASE}/0002-misc-dw"; do
+        [[ -d "$subdir" ]] || continue
+        echo "  → $(basename $subdir)"
+        for patch in "${subdir}"/*.patch "${subdir}"/*.diff; do
+            [[ -f "$patch" ]] && apply_patch "$patch"
+        done
     done
 else
-    echo "  ⚠ dwproton dir not found at: ${DWPROTON}"
-    echo "    Available dirs:"
-    ls "${WORKDIR}/macports-src/dwproton/" 2>/dev/null || echo "    (dwproton folder missing)"
+    echo "  ✗ FATAL: dwproton base dir not found at: ${DWPROTON_BASE}"
+    ls "${WORKDIR}/macports-src/emulators/wine-devel/files/" 2>/dev/null
+    exit 1
 fi
 # DIAGNOSTICS: Instead of hard-fail, gather detailed info about what
 # 0006 actually touched and where WineMetalLayer ended up (if anywhere)

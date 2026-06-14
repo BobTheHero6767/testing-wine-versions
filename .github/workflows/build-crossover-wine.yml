@@ -53,7 +53,7 @@ jobs:
 
       - uses: hendrikmuhs/ccache-action@v1
         with:
-          key: winecx-${{ inputs.version }}-molten
+          key: winecx-${{ inputs.version }}-dwwinewefine
 
       - name: Build Wine
         run: ./scripts/build-wine.sh "${{ inputs.version }}"
